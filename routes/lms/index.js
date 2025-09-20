@@ -152,15 +152,14 @@ permissions.ignoreRoute(/^\/api\/lms\/service-token(?:\?.*)?$/);
 // POST /api/lms/service-token
 server.post('/api/lms/service-token', function(req, res) {
   try {
-    // Prefer req.user populated by session middleware
-    var currentUser = (req && req.user) ? req.user : null;
-    if (!currentUser) {
-      try {
-        if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
-          currentUser = usermanager.getCurrentUser();
-        }
-      } catch (e) {}
-    }
+    // Prefer usermanager (richer object), then fall back to req.user
+    var currentUser = null;
+    try {
+      if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
+        currentUser = usermanager.getCurrentUser();
+      }
+    } catch (e) {}
+    if (!currentUser && req && req.user) currentUser = req.user;
 
     if (!currentUser || !currentUser._id) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -175,14 +174,13 @@ server.post('/api/lms/service-token', function(req, res) {
 // GET /api/lms/service-token (CSRF-friendly helper)
 server.get('/api/lms/service-token', function(req, res) {
   try {
-    var currentUser = (req && req.user) ? req.user : null;
-    if (!currentUser) {
-      try {
-        if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
-          currentUser = usermanager.getCurrentUser();
-        }
-      } catch (e) {}
-    }
+    var currentUser = null;
+    try {
+      if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
+        currentUser = usermanager.getCurrentUser();
+      }
+    } catch (e) {}
+    if (!currentUser && req && req.user) currentUser = req.user;
     if (!currentUser || !currentUser._id) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
