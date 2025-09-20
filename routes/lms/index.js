@@ -66,17 +66,21 @@ function _issueToken(userId, tenantId, ttlMs) {
 
 function _resolveAuth(req, res) {
   try {
+    logger.log('info', 'LMS auth: starting _resolveAuth');
+    
     // Prefer request-bound user (session-authenticated requests under /api)
     if (req && req.user && req.user._id && req.user.tenant && req.user.tenant._id) {
       logger.log('info', 'LMS auth: using req.user');
       return { userId: req.user._id, tenantId: req.user.tenant._id, user: req.user };
     }
+    logger.log('info', 'LMS auth: req.user not available, checking usermanager');
 
     // Try to get user from global usermanager as fallback
     var currentUser = null;
     try {
       if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
         currentUser = usermanager.getCurrentUser();
+        logger.log('info', 'LMS auth: usermanager.getCurrentUser() returned:', currentUser ? 'user object' : 'null');
       }
     } catch (e) {
       logger.log('error', 'LMS auth: usermanager error:', e);
@@ -85,14 +89,17 @@ function _resolveAuth(req, res) {
       logger.log('info', 'LMS auth: using usermanager');
       return { userId: currentUser._id, tenantId: currentUser.tenant._id, user: currentUser };
     }
+    logger.log('info', 'LMS auth: usermanager not available, checking service token');
 
     // Fallback to service token header
     var hdr = req.headers['x-adapt-service-token'];
+    logger.log('info', 'LMS auth: service token header:', hdr ? 'present' : 'missing');
     if (!hdr || typeof hdr !== 'string') {
       logger.log('info', 'LMS auth: no service token');
       return null;
     }
     var rec = _tokens.get(hdr);
+    logger.log('info', 'LMS auth: token lookup result:', rec ? 'found' : 'not found');
     if (!rec) {
       logger.log('info', 'LMS auth: invalid service token');
       return null;
@@ -103,7 +110,7 @@ function _resolveAuth(req, res) {
       return null;
     }
     // Lazy purge on use: if close to expiry, keep as-is; caller can request a new token via service-token endpoint
-    logger.log('info', 'LMS auth: using service token');
+    logger.log('info', 'LMS auth: using service token, userId:', rec.userId, 'tenantId:', rec.tenantId);
     return { userId: rec.userId, tenantId: rec.tenantId, user: null };
   } catch (e) {
     logger.log('error', 'LMS auth: _resolveAuth error:', e);
@@ -151,8 +158,13 @@ server.get('/api/lms/whoami', function(req, res) {
 // GET /api/lms/course/:courseId/metadata (tenant-less helper; uses auth.tenantId or infers from course)
 server.get('/api/lms/course/:courseId/metadata', function(req, res) {
   try {
+    logger.log('info', 'LMS metadata: starting request for courseId:', req.params.courseId);
     var auth = _resolveAuth(req, res);
-    if (!auth) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    if (!auth) {
+      logger.log('info', 'LMS metadata: auth failed');
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    logger.log('info', 'LMS metadata: auth successful, userId:', auth.userId, 'tenantId:', auth.tenantId);
     var courseId = req.params.courseId;
 
     // Use tenantId from auth if available (service token), otherwise infer from course
@@ -185,14 +197,17 @@ server.get('/api/lms/course/:courseId/metadata', function(req, res) {
     });
 
     function _checkPermsAndReturn(courseDoc, tenantId) {
+      logger.log('info', 'LMS metadata: checking permissions for userId:', auth.userId, 'tenantId:', tenantId, 'courseId:', courseId);
       helpers.hasCoursePermission('read', auth.userId, tenantId, { _id: courseId }, function(err, hasPermission) {
         if (err) {
           logger.log('error', 'Permission check error:', err);
           return _handleError(res, err, 500);
         }
         if (!hasPermission) {
+          logger.log('info', 'LMS metadata: permission denied');
           return _handleError(res, new Error('Permission denied'), 403);
         }
+        logger.log('info', 'LMS metadata: permission granted, returning course data');
 
         return res.status(200).json({
           success: true,
