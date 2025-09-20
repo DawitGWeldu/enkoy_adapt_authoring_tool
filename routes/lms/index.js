@@ -19,13 +19,13 @@ server.use('/api/lms', function(req, res, next) {
 });
 
 // Public ping endpoint (no auth required)
-permissions.ignoreRoute(/^\/api\/lms\/ping\/?$/);
+permissions.ignoreRoute(/^\/api\/lms\/ping(?:\?.*)?$/);
 server.get('/api/lms/ping', function(req, res) {
   return res.status(200).json({ ok: true, timestamp: Date.now(), message: 'LMS routes are working' });
 });
 
 // Secret-based token endpoint (bypasses auth middleware for testing)
-permissions.ignoreRoute(/^\/api\/lms\/service-token\/open\/?$/);
+permissions.ignoreRoute(/^\/api\/lms\/service-token\/open(?:\?.*)?$/);
 server.get('/api/lms/service-token/open', function(req, res) {
   try {
     var secret = req.query.secret;
@@ -117,7 +117,7 @@ function _handleError(res, error, status) {
 }
 
 // Allow whoami through permission guard
-permissions.ignoreRoute(/^\/api\/lms\/whoami\/?$/);
+permissions.ignoreRoute(/^\/api\/lms\/whoami(?:\?.*)?$/);
 // GET /api/lms/whoami (accepts session OR x-adapt-service-token)
 server.get('/api/lms/whoami', function(req, res) {
   try {
@@ -144,7 +144,7 @@ server.get('/api/lms/whoami', function(req, res) {
 });
 
 // Allow service-token through permission guard (must be logged-in session to mint)
-permissions.ignoreRoute(/^\/api\/lms\/service-token\/?$/);
+permissions.ignoreRoute(/^\/api\/lms\/service-token(?:\?.*)?$/);
 // POST /api/lms/service-token
 server.post('/api/lms/service-token', function(req, res) {
   try {
