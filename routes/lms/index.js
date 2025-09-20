@@ -364,6 +364,16 @@ server.post('/api/lms/export', function(req, res) {
       app.outputmanager.getOutputPlugin(configuration.getConfig('outputPlugin'), function(error, plugin) {
         if (error) return _handleError(res, error);
         try {
+          // Ensure downstream code relying on session/req.user has identity and tenant context
+          var minimalUser = { _id: auth.userId, tenant: { _id: tenantId } };
+          req.user = req.user || minimalUser;
+          if (!req.user._id || !req.user.tenant || !req.user.tenant._id) {
+            req.user = minimalUser;
+          }
+          if (!req.session) req.session = {};
+          if (!req.session.passport) req.session.passport = {};
+          req.session.passport.user = minimalUser;
+
           plugin.export(courseId, req, res, function (exportErr, result) {
             if (exportErr) {
               logger.log('error', 'Unable to export:', exportErr);
