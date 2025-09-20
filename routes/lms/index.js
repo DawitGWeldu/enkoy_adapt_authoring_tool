@@ -9,6 +9,7 @@ var helpers = require('../../lib/helpers');
 var logger = require('../../lib/logger');
 var usermanager = require('../../lib/usermanager');
 var outputmanager = require('../../lib/outputmanager');
+var database = require('../../lib/database');
 var permissions = require('../../lib/permissions');
 var Constants = outputmanager.Constants;
 
@@ -171,11 +172,11 @@ server.get('/api/lms/course/:courseId/metadata', function(req, res) {
     var effectiveTenantId = auth.tenantId;
     
     if (!effectiveTenantId) {
-      // Infer tenant from course document
-      app.contentmanager.getContentPlugin('course', function(error, plugin) {
-        if (error) return _handleError(res, error);
-        plugin.retrieve({ _id: courseId }, {}, function(error2, results) {
-          if (error2) return _handleError(res, error2);
+      // Infer tenant from course document using DB with master context first
+      database.getDatabase(function(dbErr, db) {
+        if (dbErr) return _handleError(res, dbErr);
+        db.retrieve('course', { _id: courseId }, { jsonOnly: true }, function(err, results) {
+          if (err) return _handleError(res, err);
           if (!results || results.length !== 1) return _handleError(res, new Error('Course not found'), 404);
           var courseDoc = results[0];
           effectiveTenantId = (courseDoc && courseDoc._tenantId) ? String(courseDoc._tenantId) : null;
@@ -186,15 +187,15 @@ server.get('/api/lms/course/:courseId/metadata', function(req, res) {
       return;
     }
 
-    // If we have tenantId from auth, fetch course and check permissions
-    app.contentmanager.getContentPlugin('course', function(error, plugin) {
-      if (error) return _handleError(res, error);
-      plugin.retrieve({ _id: courseId }, {}, function(error2, results) {
-        if (error2) return _handleError(res, error2);
+    // If we have tenantId from auth, fetch course directly from DB with the correct tenant context
+    database.getDatabase(function(dbErr, db) {
+      if (dbErr) return _handleError(res, dbErr);
+      db.retrieve('course', { _id: courseId }, { jsonOnly: true }, function(err, results) {
+        if (err) return _handleError(res, err);
         if (!results || results.length !== 1) return _handleError(res, new Error('Course not found'), 404);
         return _checkPermsAndReturn(results[0], effectiveTenantId);
       });
-    });
+    }, effectiveTenantId);
 
     function _checkPermsAndReturn(courseDoc, tenantId) {
       logger.log('info', 'LMS metadata: checking permissions for userId:', auth.userId, 'tenantId:', tenantId, 'courseId:', courseId);
@@ -304,15 +305,15 @@ server.get('/api/lms/:tenantId/course/:courseId/metadata', function(req, res) {
       if (!hasPermission) {
         return _handleError(res, new Error('Permission denied'), 403);
       }
-      // Retrieve course metadata
-      app.contentmanager.getContentPlugin('course', function(error, plugin) {
-        if (error) return _handleError(res, error);
-        plugin.retrieve({ _id: courseId }, {}, function(error2, results) {
-          if (error2) return _handleError(res, error2);
+      // Retrieve course metadata using DB with tenant context
+      database.getDatabase(function(dbErr, db) {
+        if (dbErr) return _handleError(res, dbErr);
+        db.retrieve('course', { _id: courseId }, { jsonOnly: true }, function(err, results) {
+          if (err) return _handleError(res, err);
           if (!results || results.length !== 1) return _handleError(res, new Error('Course not found'), 404);
           return _checkPermsAndReturn(results[0]);
         });
-      });
+      }, effectiveTenantId);
     });
 
     function _checkPermsAndReturn(course) {
