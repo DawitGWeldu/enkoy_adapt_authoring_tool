@@ -169,7 +169,7 @@ server.post('/api/lms/service-token', function(req, res) {
 });
 
 // GET /api/lms/service-token (CSRF-friendly helper)
-server.get('/lms/service-token', function(req, res) {
+server.get('/api/lms/service-token', function(req, res) {
   try {
     var currentUser = (req && req.user) ? req.user : null;
     if (!currentUser) {
