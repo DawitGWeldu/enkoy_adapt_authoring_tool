@@ -24,8 +24,16 @@ function _issueToken(userId, tenantId, ttlMs) {
 }
 
 function _resolveAuth(req, res) {
-  // Prefer session user when available
-  var currentUser = usermanager.getCurrentUser && usermanager.getCurrentUser();
+  // Try to get user from session first
+  var currentUser = null;
+  try {
+    if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
+      currentUser = usermanager.getCurrentUser();
+    }
+  } catch (e) {
+    // Ignore errors getting current user
+  }
+  
   if (currentUser && currentUser._id && currentUser.tenant && currentUser.tenant._id) {
     return { userId: currentUser._id, tenantId: currentUser.tenant._id, user: currentUser };
   }
@@ -53,8 +61,20 @@ function _handleError(res, error, status) {
 // GET /api/lms/whoami
 server.get('/lms/whoami', function(req, res) {
   try {
-    var currentUser = usermanager.getCurrentUser && usermanager.getCurrentUser();
-    if (!currentUser) {
+    var currentUser = null;
+    try {
+      if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
+        currentUser = usermanager.getCurrentUser();
+        logger.log('info', 'LMS whoami: got current user:', currentUser ? currentUser._id : 'null');
+      } else {
+        logger.log('info', 'LMS whoami: usermanager.getCurrentUser not available');
+      }
+    } catch (e) {
+      logger.log('error', 'LMS whoami: error getting current user:', e);
+    }
+    
+    if (!currentUser || !currentUser._id) {
+      logger.log('info', 'LMS whoami: no current user, returning 401');
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
     return res.status(200).json({
@@ -72,8 +92,16 @@ server.get('/lms/whoami', function(req, res) {
 // POST /api/lms/service-token
 server.post('/lms/service-token', function(req, res) {
   try {
-    var currentUser = usermanager.getCurrentUser && usermanager.getCurrentUser();
-    if (!currentUser) {
+    var currentUser = null;
+    try {
+      if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
+        currentUser = usermanager.getCurrentUser();
+      }
+    } catch (e) {
+      // Ignore errors getting current user
+    }
+    
+    if (!currentUser || !currentUser._id) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
     var issued = _issueToken(currentUser._id, currentUser.tenant && currentUser.tenant._id, DEFAULT_TTL_MS);
@@ -92,10 +120,14 @@ server.get('/lms/:tenantId/course/:courseId/metadata', function(req, res) {
     var tenantId = req.params.tenantId;
     var courseId = req.params.courseId;
 
-    // Permission check
-    helpers.hasCoursePermission('', auth.userId, tenantId, { _id: courseId }, function(err, hasPermission) {
-      if (err || !hasPermission) {
-        return _handleError(res, err || new Error('Permission denied'), 401);
+    // Permission check - try with different permission levels
+    helpers.hasCoursePermission('read', auth.userId, tenantId, { _id: courseId }, function(err, hasPermission) {
+      if (err) {
+        logger.log('error', 'Permission check error:', err);
+        return _handleError(res, err, 500);
+      }
+      if (!hasPermission) {
+        return _handleError(res, new Error('Permission denied'), 403);
       }
       // Retrieve course metadata
       app.contentmanager.getContentPlugin('course', function(error, plugin) {
@@ -130,8 +162,14 @@ server.post('/lms/export', function(req, res) {
     var courseId = body.courseId;
     if (!tenantId || !courseId) return res.status(400).json({ success: false, message: 'tenantId and courseId are required' });
 
-    helpers.hasCoursePermission('', auth.userId, tenantId, { _id: courseId }, function(err, hasPermission) {
-      if (err || !hasPermission) return _handleError(res, err || new Error('Permission denied'), 401);
+    helpers.hasCoursePermission('read', auth.userId, tenantId, { _id: courseId }, function(err, hasPermission) {
+      if (err) {
+        logger.log('error', 'Permission check error:', err);
+        return _handleError(res, err, 500);
+      }
+      if (!hasPermission) {
+        return _handleError(res, new Error('Permission denied'), 403);
+      }
 
       // Use the output plugin to export (same behavior as routes/export)
       app.outputmanager.getOutputPlugin(configuration.getConfig('outputPlugin'), function(error, plugin) {
@@ -164,8 +202,14 @@ server.get('/lms/export/download', function(req, res) {
     var courseId = req.query.courseId;
     if (!tenantId || !courseId) return res.status(400).json({ success: false, message: 'tenantId and courseId are required' });
 
-    helpers.hasCoursePermission('', auth.userId, tenantId, { _id: courseId }, function(err, hasPermission) {
-      if (err || !hasPermission) return _handleError(res, err || new Error('Permission denied'), 401);
+    helpers.hasCoursePermission('read', auth.userId, tenantId, { _id: courseId }, function(err, hasPermission) {
+      if (err) {
+        logger.log('error', 'Permission check error:', err);
+        return _handleError(res, err, 500);
+      }
+      if (!hasPermission) {
+        return _handleError(res, new Error('Permission denied'), 403);
+      }
 
       var userId = auth.userId;
       var zipDir = path.join(
