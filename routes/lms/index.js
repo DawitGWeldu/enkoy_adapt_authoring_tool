@@ -58,32 +58,24 @@ function _handleError(res, error, status) {
   return res.status(status || 500).json({ success: false, message: (error && error.message) || String(error) });
 }
 
-// GET /api/lms/whoami
+// GET /api/lms/whoami (accepts session OR x-adapt-service-token)
 server.get('/lms/whoami', function(req, res) {
   try {
-    var currentUser = null;
-    try {
-      if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
-        currentUser = usermanager.getCurrentUser();
-        logger.log('info', 'LMS whoami: got current user:', currentUser ? currentUser._id : 'null');
-      } else {
-        logger.log('info', 'LMS whoami: usermanager.getCurrentUser not available');
-      }
-    } catch (e) {
-      logger.log('error', 'LMS whoami: error getting current user:', e);
-    }
-    
-    if (!currentUser || !currentUser._id) {
-      logger.log('info', 'LMS whoami: no current user, returning 401');
+    var auth = _resolveAuth(req, res);
+    if (!auth) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-    return res.status(200).json({
+    // If session user is available, include email and tenantName; otherwise return token identity only
+    var payload = {
       success: true,
-      userId: currentUser._id,
-      email: currentUser.email,
-      tenantId: currentUser.tenant && currentUser.tenant._id,
-      tenantName: currentUser.tenant && currentUser.tenant.name
-    });
+      userId: auth.userId,
+      tenantId: auth.tenantId
+    };
+    if (auth.user) {
+      payload.email = auth.user.email;
+      payload.tenantName = auth.user.tenant && auth.user.tenant.name;
+    }
+    return res.status(200).json(payload);
   } catch (e) {
     return _handleError(res, e);
   }
@@ -101,6 +93,25 @@ server.post('/lms/service-token', function(req, res) {
       // Ignore errors getting current user
     }
     
+    if (!currentUser || !currentUser._id) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    var issued = _issueToken(currentUser._id, currentUser.tenant && currentUser.tenant._id, DEFAULT_TTL_MS);
+    return res.status(200).json({ success: true, token: issued.token, userId: issued.userId, tenantId: issued.tenantId, expiresAt: issued.expiresAt });
+  } catch (e) {
+    return _handleError(res, e);
+  }
+});
+
+// GET /api/lms/service-token (CSRF-friendly helper)
+server.get('/lms/service-token', function(req, res) {
+  try {
+    var currentUser = null;
+    try {
+      if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
+        currentUser = usermanager.getCurrentUser();
+      }
+    } catch (e) {}
     if (!currentUser || !currentUser._id) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
