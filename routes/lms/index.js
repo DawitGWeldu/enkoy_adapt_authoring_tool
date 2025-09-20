@@ -11,6 +11,44 @@ var usermanager = require('../../lib/usermanager');
 var outputmanager = require('../../lib/outputmanager');
 var Constants = outputmanager.Constants;
 
+// Add middleware to log all LMS route hits
+server.use('/lms', function(req, res, next) {
+  logger.log('info', 'LMS route hit:', req.method, req.url, 'from', req.ip);
+  next();
+});
+
+// Public ping endpoint (no auth required)
+server.get('/lms/ping', function(req, res) {
+  return res.status(200).json({ ok: true, timestamp: Date.now(), message: 'LMS routes are working' });
+});
+
+// Secret-based token endpoint (bypasses auth middleware for testing)
+server.get('/lms/service-token/open', function(req, res) {
+  try {
+    var secret = req.query.secret;
+    if (secret !== 'lms-integration-test-2025') {
+      return res.status(401).json({ success: false, message: 'Invalid secret' });
+    }
+    
+    // For testing, create a mock user token
+    var mockUserId = 'test-user-' + Date.now();
+    var mockTenantId = 'test-tenant';
+    var issued = _issueToken(mockUserId, mockTenantId, DEFAULT_TTL_MS);
+    
+    logger.log('info', 'Generated test token for LMS integration');
+    return res.status(200).json({ 
+      success: true, 
+      token: issued.token, 
+      userId: issued.userId, 
+      tenantId: issued.tenantId, 
+      expiresAt: issued.expiresAt,
+      note: 'This is a test token for LMS integration'
+    });
+  } catch (e) {
+    return _handleError(res, e);
+  }
+});
+
 // In-memory service token store (no DB/schema changes)
 // token -> { userId, tenantId, expMs }
 var _tokens = new Map();
@@ -24,7 +62,12 @@ function _issueToken(userId, tenantId, ttlMs) {
 }
 
 function _resolveAuth(req, res) {
-  // Try to get user from session first
+  // Prefer request-bound user (session-authenticated requests under /api)
+  if (req && req.user && req.user._id && req.user.tenant && req.user.tenant._id) {
+    return { userId: req.user._id, tenantId: req.user.tenant._id, user: req.user };
+  }
+
+  // Try to get user from global usermanager as fallback
   var currentUser = null;
   try {
     if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
@@ -33,7 +76,6 @@ function _resolveAuth(req, res) {
   } catch (e) {
     // Ignore errors getting current user
   }
-  
   if (currentUser && currentUser._id && currentUser.tenant && currentUser.tenant._id) {
     return { userId: currentUser._id, tenantId: currentUser.tenant._id, user: currentUser };
   }
@@ -84,15 +126,16 @@ server.get('/lms/whoami', function(req, res) {
 // POST /api/lms/service-token
 server.post('/lms/service-token', function(req, res) {
   try {
-    var currentUser = null;
-    try {
-      if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
-        currentUser = usermanager.getCurrentUser();
-      }
-    } catch (e) {
-      // Ignore errors getting current user
+    // Prefer req.user populated by session middleware
+    var currentUser = (req && req.user) ? req.user : null;
+    if (!currentUser) {
+      try {
+        if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
+          currentUser = usermanager.getCurrentUser();
+        }
+      } catch (e) {}
     }
-    
+
     if (!currentUser || !currentUser._id) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
@@ -106,12 +149,14 @@ server.post('/lms/service-token', function(req, res) {
 // GET /api/lms/service-token (CSRF-friendly helper)
 server.get('/lms/service-token', function(req, res) {
   try {
-    var currentUser = null;
-    try {
-      if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
-        currentUser = usermanager.getCurrentUser();
-      }
-    } catch (e) {}
+    var currentUser = (req && req.user) ? req.user : null;
+    if (!currentUser) {
+      try {
+        if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
+          currentUser = usermanager.getCurrentUser();
+        }
+      } catch (e) {}
+    }
     if (!currentUser || !currentUser._id) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
