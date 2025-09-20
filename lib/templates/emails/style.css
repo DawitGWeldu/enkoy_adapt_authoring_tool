@@ -1,58 +1,92 @@
 @import url(http://fonts.googleapis.com/css?family=Raleway:800&text=ADAPT);
 
+/* General Link Styling */
 a {
   text-decoration: none;
-  color: #34bee0;
+  color: #007bff; /* Changed to a more standard blue for links, often looks better */
+  transition: color 0.3s ease; /* Smooth transition for hover effects */
+}
+a:hover {
+  color: #0056b3; /* Darker blue on hover */
 }
 
+/* Body and Overall Page Styling */
 body {
-  font-family: sans-serif;
-  background-color: #f3fcfe;
-  color: #263944;
-  margin: 30px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* More modern and readable sans-serif font stack */
+  background-color: #f7fafd; /* Slightly softer background */
+  color: #334e68; /* Darker, more professional text color */
+  margin: 0; /* Remove default body margin */
+  padding: 30px 0; /* Add padding to body for overall spacing, better for email clients */
+  line-height: 1.6; /* Improved line spacing for readability */
 }
+
+/* Logo Styling */
 .logo {
   font-family: 'Raleway', sans-serif;
   font-weight: 800;
-  font-size: 48px;
-  color: #d6f2f9;
+  font-size: 56px; /* Slightly larger for more impact */
+  color: #2c7da0; /* Darker, more prominent color for the logo */
   text-align: center;
-  letter-spacing: 20px;
-  margin-bottom: 10px;
+  letter-spacing: 15px; /* Slightly reduced letter spacing for better readability */
+  margin-bottom: 20px; /* Increased bottom margin for more separation */
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1); /* Subtle text shadow for depth */
+  padding-top: 20px; /* Add some padding to the top */
 }
+
+/* Title Styling */
 .title {
-  font-size: 130%;
-  margin: 20px 0 30px 0;
+  font-size: 180%; /* Significantly larger for a stronger heading */
+  font-weight: bold; /* Make the title bold */
+  margin: 25px 0 35px 0; /* Adjusted margins for better spacing */
+  color: #1a535c; /* A strong, deep teal for the title */
+  text-align: center; /* Center align the title */
 }
+
+/* Content Box Styling */
 .content {
-  max-width: 600px;
-  padding: 70px 40px;
-  background-color: #fff;
-  border: 1px solid #d6f2f9;
+  max-width: 650px; /* Slightly increased max-width for more content space */
+  padding: 50px 40px; /* Adjusted padding for a less 'stuffed' look */
+  background-color: #ffffff; /* Pure white background for content */
+  border: 1px solid #e0f2f7; /* Lighter, more subtle border color */
+  border-radius: 8px; /* Added slight border-radius for a softer look */
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08); /* Subtle shadow for depth */
   margin: 0 auto;
-  margin-bottom: 10px;
+  margin-bottom: 25px; /* Increased bottom margin */
+  line-height: 1.7; /* Improved line height within content for better readability */
+  color: #495057; /* Darker, more neutral text color for body content */
 }
+
+/* Button Styling within Content */
 .content a.btn {
-  font-size: 130%;
+  font-size: 120%; /* Slightly adjusted button font size */
   text-align: center;
-  width: 200px;
+  width: 220px; /* Slightly wider button */
   display: block;
   margin: 0 auto;
   margin-top: 40px;
-  padding: 20px;
-  border: 1px solid #d6f2f9;
-  border-radius: 5px;
+  padding: 18px 25px; /* Slightly adjusted padding for better proportions */
+  border: none; /* Removed border for a cleaner look, relying on background */
+  border-radius: 30px; /* More rounded button for a modern feel */
   text-decoration: none;
-  background-color: #34bee0;
+  background-color: #1abc9c; /* A vibrant green for a call to action */
   color: #fff;
+  font-weight: bold; /* Make the button text bold */
+  letter-spacing: 0.5px;
+  transition: background-color 0.3s ease, transform 0.2s ease; /* Smooth transitions for hover */
 }
+
 .content a.btn:hover {
-  background-color: #2ea6c3;
+  background-color: #16a085; /* Darker green on hover */
+  transform: translateY(-2px); /* Subtle lift effect on hover */
 }
+
+/* Footer Styling */
 .footer {
   margin: 0 auto;
-  max-width: 600px;
+  max-width: 700px;
   text-align: center;
-  font-size: 75%;
-  color: #aebec1;
+  font-size: 90%; /* Slightly smaller font size for footer */
+  color: #6c757d; /* Softer, more muted color for footer text */
+  padding-top: 20px; /* Add some padding to the top of the footer */
+  line-height: 1.5;
 }
