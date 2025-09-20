@@ -119,6 +119,7 @@ function _handleError(res, error, status) {
 // Allow whoami through permission guard
 permissions.ignoreRoute(/^\/api\/lms\/whoami(?:\?.*)?$/);
 // Allow metadata/export endpoints through guard (we do explicit checks inside)
+permissions.ignoreRoute(/^\/api\/lms\/course\/[^/]+\/metadata(?:\?.*)?$/);
 permissions.ignoreRoute(/^\/api\/lms\/[^/]+\/course\/[^/]+\/metadata(?:\?.*)?$/);
 permissions.ignoreRoute(/^\/api\/lms\/export(?:\?.*)?$/);
 permissions.ignoreRoute(/^\/api\/lms\/export\/download(?:\?.*)?$/);
@@ -143,6 +144,47 @@ server.get('/api/lms/whoami', function(req, res) {
     return res.status(200).json(payload);
   } catch (e) {
     logger.log('error', 'LMS whoami error:', e);
+    return _handleError(res, e);
+  }
+});
+
+// GET /api/lms/course/:courseId/metadata (tenant-less helper; infers tenant from course)
+server.get('/api/lms/course/:courseId/metadata', function(req, res) {
+  try {
+    var auth = _resolveAuth(req, res);
+    if (!auth) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    var courseId = req.params.courseId;
+
+    app.contentmanager.getContentPlugin('course', function(error, plugin) {
+      if (error) return _handleError(res, error);
+      plugin.retrieve({ _id: courseId }, {}, function(error2, results) {
+        if (error2) return _handleError(res, error2);
+        if (!results || results.length !== 1) return _handleError(res, new Error('Course not found'), 404);
+        var courseDoc = results[0];
+        var inferredTenantId = (courseDoc && courseDoc._tenantId) ? String(courseDoc._tenantId) : null;
+        if (!inferredTenantId) return _handleError(res, new Error('Unable to resolve tenant for course'), 400);
+
+        helpers.hasCoursePermission('read', auth.userId, inferredTenantId, { _id: courseId }, function(err, hasPermission) {
+          if (err) {
+            logger.log('error', 'Permission check error:', err);
+            return _handleError(res, err, 500);
+          }
+          if (!hasPermission) {
+            return _handleError(res, new Error('Permission denied'), 403);
+          }
+
+          return res.status(200).json({
+            success: true,
+            id: courseDoc._id,
+            title: courseDoc.title,
+            description: courseDoc.body || courseDoc.description || null,
+            heroImageUrl: null,
+            updatedAt: courseDoc.updatedAt || courseDoc._modified || null
+          });
+        });
+      });
+    });
+  } catch (e) {
     return _handleError(res, e);
   }
 });
