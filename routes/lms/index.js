@@ -9,21 +9,24 @@ var helpers = require('../../lib/helpers');
 var logger = require('../../lib/logger');
 var usermanager = require('../../lib/usermanager');
 var outputmanager = require('../../lib/outputmanager');
+var permissions = require('../../lib/permissions');
 var Constants = outputmanager.Constants;
 
 // Add middleware to log all LMS route hits
-server.use('/lms', function(req, res, next) {
+server.use('/api/lms', function(req, res, next) {
   logger.log('info', 'LMS route hit:', req.method, req.url, 'from', req.ip);
   next();
 });
 
 // Public ping endpoint (no auth required)
-server.get('/lms/ping', function(req, res) {
+permissions.ignoreRoute(/^\/api\/lms\/ping\/?$/);
+server.get('/api/lms/ping', function(req, res) {
   return res.status(200).json({ ok: true, timestamp: Date.now(), message: 'LMS routes are working' });
 });
 
 // Secret-based token endpoint (bypasses auth middleware for testing)
-server.get('/lms/service-token/open', function(req, res) {
+permissions.ignoreRoute(/^\/api\/lms\/service-token\/open\/?$/);
+server.get('/api/lms/service-token/open', function(req, res) {
   try {
     var secret = req.query.secret;
     if (secret !== 'lms-integration-test-2025') {
@@ -62,47 +65,63 @@ function _issueToken(userId, tenantId, ttlMs) {
 }
 
 function _resolveAuth(req, res) {
-  // Prefer request-bound user (session-authenticated requests under /api)
-  if (req && req.user && req.user._id && req.user.tenant && req.user.tenant._id) {
-    return { userId: req.user._id, tenantId: req.user.tenant._id, user: req.user };
-  }
-
-  // Try to get user from global usermanager as fallback
-  var currentUser = null;
   try {
-    if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
-      currentUser = usermanager.getCurrentUser();
+    // Prefer request-bound user (session-authenticated requests under /api)
+    if (req && req.user && req.user._id && req.user.tenant && req.user.tenant._id) {
+      logger.log('info', 'LMS auth: using req.user');
+      return { userId: req.user._id, tenantId: req.user.tenant._id, user: req.user };
     }
-  } catch (e) {
-    // Ignore errors getting current user
-  }
-  if (currentUser && currentUser._id && currentUser.tenant && currentUser.tenant._id) {
-    return { userId: currentUser._id, tenantId: currentUser.tenant._id, user: currentUser };
-  }
 
-  // Fallback to service token header
-  var hdr = req.headers['x-adapt-service-token'];
-  if (!hdr || typeof hdr !== 'string') {
+    // Try to get user from global usermanager as fallback
+    var currentUser = null;
+    try {
+      if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
+        currentUser = usermanager.getCurrentUser();
+      }
+    } catch (e) {
+      logger.log('error', 'LMS auth: usermanager error:', e);
+    }
+    if (currentUser && currentUser._id && currentUser.tenant && currentUser.tenant._id) {
+      logger.log('info', 'LMS auth: using usermanager');
+      return { userId: currentUser._id, tenantId: currentUser.tenant._id, user: currentUser };
+    }
+
+    // Fallback to service token header
+    var hdr = req.headers['x-adapt-service-token'];
+    if (!hdr || typeof hdr !== 'string') {
+      logger.log('info', 'LMS auth: no service token');
+      return null;
+    }
+    var rec = _tokens.get(hdr);
+    if (!rec) {
+      logger.log('info', 'LMS auth: invalid service token');
+      return null;
+    }
+    if (Date.now() > rec.expMs) {
+      _tokens.delete(hdr);
+      logger.log('info', 'LMS auth: expired service token');
+      return null;
+    }
+    // Lazy purge on use: if close to expiry, keep as-is; caller can request a new token via service-token endpoint
+    logger.log('info', 'LMS auth: using service token');
+    return { userId: rec.userId, tenantId: rec.tenantId, user: null };
+  } catch (e) {
+    logger.log('error', 'LMS auth: _resolveAuth error:', e);
     return null;
   }
-  var rec = _tokens.get(hdr);
-  if (!rec) return null;
-  if (Date.now() > rec.expMs) {
-    _tokens.delete(hdr);
-    return null;
-  }
-  // Lazy purge on use: if close to expiry, keep as-is; caller can request a new token via service-token endpoint
-  return { userId: rec.userId, tenantId: rec.tenantId, user: null };
 }
 
 function _handleError(res, error, status) {
-  logger.log('error', error);
-  return res.status(status || 500).json({ success: false, message: (error && error.message) || String(error) });
+  logger.log('error', 'LMS Error:', error);
+  return res.status(status || 500).json({ success: false, error: (error && error.message) || String(error) });
 }
 
+// Allow whoami through permission guard
+permissions.ignoreRoute(/^\/api\/lms\/whoami\/?$/);
 // GET /api/lms/whoami (accepts session OR x-adapt-service-token)
-server.get('/lms/whoami', function(req, res) {
+server.get('/api/lms/whoami', function(req, res) {
   try {
+    logger.log('info', 'LMS whoami: req.user exists?', !!req.user);
     var auth = _resolveAuth(req, res);
     if (!auth) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -119,12 +138,15 @@ server.get('/lms/whoami', function(req, res) {
     }
     return res.status(200).json(payload);
   } catch (e) {
+    logger.log('error', 'LMS whoami error:', e);
     return _handleError(res, e);
   }
 });
 
+// Allow service-token through permission guard (must be logged-in session to mint)
+permissions.ignoreRoute(/^\/api\/lms\/service-token\/?$/);
 // POST /api/lms/service-token
-server.post('/lms/service-token', function(req, res) {
+server.post('/api/lms/service-token', function(req, res) {
   try {
     // Prefer req.user populated by session middleware
     var currentUser = (req && req.user) ? req.user : null;
@@ -168,7 +190,7 @@ server.get('/lms/service-token', function(req, res) {
 });
 
 // GET /api/lms/:tenantId/course/:courseId/metadata
-server.get('/lms/:tenantId/course/:courseId/metadata', function(req, res) {
+server.get('/api/lms/:tenantId/course/:courseId/metadata', function(req, res) {
   try {
     var auth = _resolveAuth(req, res);
     if (!auth) return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -209,7 +231,7 @@ server.get('/lms/:tenantId/course/:courseId/metadata', function(req, res) {
 });
 
 // POST /api/lms/export  { tenantId, courseId }
-server.post('/lms/export', function(req, res) {
+server.post('/api/lms/export', function(req, res) {
   try {
     var auth = _resolveAuth(req, res);
     if (!auth) return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -250,7 +272,7 @@ server.post('/lms/export', function(req, res) {
 });
 
 // GET /api/lms/export/download?tenantId=...&courseId=...
-server.get('/lms/export/download', function(req, res) {
+server.get('/api/lms/export/download', function(req, res) {
   try {
     var auth = _resolveAuth(req, res);
     if (!auth) return res.status(401).json({ success: false, message: 'Unauthorized' });
