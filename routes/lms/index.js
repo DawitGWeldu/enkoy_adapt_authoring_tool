@@ -148,42 +148,62 @@ server.get('/api/lms/whoami', function(req, res) {
   }
 });
 
-// GET /api/lms/course/:courseId/metadata (tenant-less helper; infers tenant from course)
+// GET /api/lms/course/:courseId/metadata (tenant-less helper; uses auth.tenantId or infers from course)
 server.get('/api/lms/course/:courseId/metadata', function(req, res) {
   try {
     var auth = _resolveAuth(req, res);
     if (!auth) return res.status(401).json({ success: false, message: 'Unauthorized' });
     var courseId = req.params.courseId;
 
+    // Use tenantId from auth if available (service token), otherwise infer from course
+    var effectiveTenantId = auth.tenantId;
+    
+    if (!effectiveTenantId) {
+      // Infer tenant from course document
+      app.contentmanager.getContentPlugin('course', function(error, plugin) {
+        if (error) return _handleError(res, error);
+        plugin.retrieve({ _id: courseId }, {}, function(error2, results) {
+          if (error2) return _handleError(res, error2);
+          if (!results || results.length !== 1) return _handleError(res, new Error('Course not found'), 404);
+          var courseDoc = results[0];
+          effectiveTenantId = (courseDoc && courseDoc._tenantId) ? String(courseDoc._tenantId) : null;
+          if (!effectiveTenantId) return _handleError(res, new Error('Unable to resolve tenant for course'), 400);
+          return _checkPermsAndReturn(courseDoc, effectiveTenantId);
+        });
+      });
+      return;
+    }
+
+    // If we have tenantId from auth, fetch course and check permissions
     app.contentmanager.getContentPlugin('course', function(error, plugin) {
       if (error) return _handleError(res, error);
       plugin.retrieve({ _id: courseId }, {}, function(error2, results) {
         if (error2) return _handleError(res, error2);
         if (!results || results.length !== 1) return _handleError(res, new Error('Course not found'), 404);
-        var courseDoc = results[0];
-        var inferredTenantId = (courseDoc && courseDoc._tenantId) ? String(courseDoc._tenantId) : null;
-        if (!inferredTenantId) return _handleError(res, new Error('Unable to resolve tenant for course'), 400);
-
-        helpers.hasCoursePermission('read', auth.userId, inferredTenantId, { _id: courseId }, function(err, hasPermission) {
-          if (err) {
-            logger.log('error', 'Permission check error:', err);
-            return _handleError(res, err, 500);
-          }
-          if (!hasPermission) {
-            return _handleError(res, new Error('Permission denied'), 403);
-          }
-
-          return res.status(200).json({
-            success: true,
-            id: courseDoc._id,
-            title: courseDoc.title,
-            description: courseDoc.body || courseDoc.description || null,
-            heroImageUrl: null,
-            updatedAt: courseDoc.updatedAt || courseDoc._modified || null
-          });
-        });
+        return _checkPermsAndReturn(results[0], effectiveTenantId);
       });
     });
+
+    function _checkPermsAndReturn(courseDoc, tenantId) {
+      helpers.hasCoursePermission('read', auth.userId, tenantId, { _id: courseId }, function(err, hasPermission) {
+        if (err) {
+          logger.log('error', 'Permission check error:', err);
+          return _handleError(res, err, 500);
+        }
+        if (!hasPermission) {
+          return _handleError(res, new Error('Permission denied'), 403);
+        }
+
+        return res.status(200).json({
+          success: true,
+          id: courseDoc._id,
+          title: courseDoc.title,
+          description: courseDoc.body || courseDoc.description || null,
+          heroImageUrl: null,
+          updatedAt: courseDoc.updatedAt || courseDoc._modified || null
+        });
+      });
+    }
   } catch (e) {
     return _handleError(res, e);
   }
