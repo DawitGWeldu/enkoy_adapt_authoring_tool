@@ -175,14 +175,17 @@ server.get('/api/lms/courses', function(req, res) {
     database.getDatabase(function(dbErr, db) {
       if (dbErr) return _handleError(res, dbErr);
 
-      var search = {};
-      if (q) {
-        search.title = new RegExp(q, 'i');
-      }
-      // Only courses created by this user within their tenant; can expand later with sharing rules
-      var query = Object.assign({ _tenantId: auth.tenantId, createdBy: auth.userId }, search);
+      // Build access control: createdBy user OR shared globally OR shared with user
+      var andClauses = [ { _tenantId: auth.tenantId } ];
+      if (q) andClauses.push({ title: new RegExp(q, 'i') });
+      var orAccess = [
+        { createdBy: auth.userId },
+        { _isShared: true },
+        { _shareWithUsers: auth.userId }
+      ];
+      var query = { $and: andClauses.concat([{ $or: orAccess }]) };
 
-      var options = { jsonOnly: true, fields: '_id title heroImage updatedAt createdAt', skip: skip, limit: limit, sort: { title: 1 } };
+      var options = { jsonOnly: true, fields: '_id title heroImage updatedAt createdAt', skip: skip, limit: limit, sort: { updatedAt: -1 } };
       db.retrieve('course', query, options, function(err, results) {
         if (err) return _handleError(res, err);
         var items = (results || []).map(function(c){
