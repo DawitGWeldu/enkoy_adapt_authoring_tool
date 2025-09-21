@@ -579,11 +579,15 @@ server.get('/api/lms/export/download', function(req, res) {
       }
 
       var userId = auth.userId;
+      // Look for the published ZIP file in the course folder (where publish creates it)
       var zipDir = path.join(
         configuration.tempDir,
         configuration.getConfig('masterTenantID'),
-        Constants.Folders.Exports,
-        userId + '.zip'
+        Constants.Folders.Framework,
+        Constants.Folders.AllCourses,
+        tenantId,
+        courseId,
+        Constants.Filenames.Download
       );
 
       fs.stat(zipDir, function(statErr, stat) {
