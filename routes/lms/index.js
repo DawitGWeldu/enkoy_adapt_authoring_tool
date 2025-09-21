@@ -393,7 +393,7 @@ server.get('/api/lms/service-token/window', function(req, res) {
       '(function(){',
       '  // Use XMLHttpRequest instead of fetch to better preserve session',
       '  var xhr = new XMLHttpRequest();',
-      '  xhr.open("GET", "/api/lms/service-token/open?secret=lms-integration-test-2025", true);',
+      '  xhr.open("GET", "/api/lms/service-token", true);',
       '  xhr.withCredentials = true;',
       '  xhr.onreadystatechange = function() {',
       '    if (xhr.readyState === 4) {',
