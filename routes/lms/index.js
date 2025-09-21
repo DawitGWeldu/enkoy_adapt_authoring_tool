@@ -46,8 +46,10 @@ if (process.env.ENABLE_LMS_OPEN_TOKEN === 'true') {
   permissions.ignoreRoute(/^\/api\/lms\/service-token\/open(?:\?.*)?$/);
   server.get('/api/lms/service-token/open', function(req, res) {
     try {
+      // Allow configurable secret via env
+      var expected = process.env.LMS_OPEN_TOKEN_SECRET || process.env.ADAPT_OPEN_TOKEN_SECRET || 'lms-integration-test-2025';
       var secret = req.query.secret;
-      if (secret !== 'lms-integration-test-2025') {
+      if (secret !== expected) {
         return res.status(401).json({ success: false, message: 'Invalid secret' });
       }
 
@@ -149,6 +151,7 @@ function _handleError(res, error, status) {
 
 // Allow whoami through permission guard
 permissions.ignoreRoute(/^\/api\/lms\/whoami(?:\?.*)?$/);
+permissions.ignoreRoute(/^\/api\/lms\/service-token\/window(?:\?.*)?$/);
 // Allow metadata/export endpoints through guard (we do explicit checks inside)
 permissions.ignoreRoute(/^\/api\/lms\/course\/[^/]+\/metadata(?:\?.*)?$/);
 permissions.ignoreRoute(/^\/api\/lms\/[^/]+\/course\/[^/]+\/metadata(?:\?.*)?$/);
@@ -304,7 +307,7 @@ server.post('/api/lms/service-token', function(req, res) {
       res.header('Access-Control-Allow-Origin', allowed);
       res.header('Vary', 'Origin');
       res.header('Access-Control-Allow-Credentials', 'true');
-      res.header('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With');
+      res.header('Access-Control-Allow-Headers', 'Content-Type');
       res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
     }
     if (req.method === 'OPTIONS') return res.sendStatus(204);
@@ -339,7 +342,7 @@ server.get('/api/lms/service-token', function(req, res) {
       res.header('Access-Control-Allow-Origin', allowed);
       res.header('Vary', 'Origin');
       res.header('Access-Control-Allow-Credentials', 'true');
-      res.header('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
       res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
     }
     if (req.method === 'OPTIONS') return res.sendStatus(204);
