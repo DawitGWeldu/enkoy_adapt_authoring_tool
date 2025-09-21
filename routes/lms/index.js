@@ -512,12 +512,13 @@ server.post('/api/lms/export', function(req, res) {
           if (!req.session.passport) req.session.passport = {};
           req.session.passport.user = minimalUser;
 
-          plugin.export(courseId, req, res, function (exportErr, result) {
+          // Use publish instead of export to get the built version
+          plugin.publish(courseId, req, res, function (exportErr, result) {
             if (exportErr) {
-              logger.log('error', 'Unable to export:', exportErr);
-              return res.status(500).json({ success: false, message: exportErr.message || 'Export failed' });
+              logger.log('error', 'Unable to publish:', exportErr);
+              return res.status(500).json({ success: false, message: exportErr.message || 'Publish failed' });
             }
-            // Indicate export was triggered; download endpoint will stream file
+            // Indicate publish was triggered; download endpoint will stream file
             return res.status(200).json({ success: true, status: 'queued' });
           });
         } catch (ex) {
