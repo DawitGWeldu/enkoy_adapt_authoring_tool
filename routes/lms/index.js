@@ -25,6 +25,21 @@ server.get('/api/lms/ping', function(req, res) {
   return res.status(200).json({ ok: true, timestamp: Date.now(), message: 'LMS routes are working' });
 });
 
+// CORS preflight for LMS endpoints that are called from the browser
+server.options('/api/lms/service-token', function(req, res) {
+  try {
+    var origin = req.headers.origin;
+    if (origin) {
+      res.header('Access-Control-Allow-Origin', origin);
+      res.header('Vary', 'Origin');
+      res.header('Access-Control-Allow-Credentials', 'true');
+      res.header('Access-Control-Allow-Headers', 'Content-Type');
+      res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    }
+  } catch (e) {}
+  return res.sendStatus(204);
+});
+
 // Secret-based token endpoint (bypasses auth middleware for testing)
 // Guarded behind ENABLE_LMS_OPEN_TOKEN flag (default: disabled)
 if (process.env.ENABLE_LMS_OPEN_TOKEN === 'true') {
@@ -285,7 +300,8 @@ server.post('/api/lms/service-token', function(req, res) {
   try {
     var origin = req.headers.origin;
     if (origin) {
-      res.header('Access-Control-Allow-Origin', origin);
+      var allowed = process.env.LMS_DEV_ORIGIN || origin;
+      res.header('Access-Control-Allow-Origin', allowed);
       res.header('Vary', 'Origin');
       res.header('Access-Control-Allow-Credentials', 'true');
       res.header('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With');
@@ -318,7 +334,9 @@ server.get('/api/lms/service-token', function(req, res) {
     // CORS for browser-based calls from LMS during connect
     var origin = req.headers.origin;
     if (origin) {
-      res.header('Access-Control-Allow-Origin', origin);
+      // Explicitly allow LMS dev origin; fallback to echo origin
+      var allowed = process.env.LMS_DEV_ORIGIN || origin;
+      res.header('Access-Control-Allow-Origin', allowed);
       res.header('Vary', 'Origin');
       res.header('Access-Control-Allow-Credentials', 'true');
       res.header('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With');
