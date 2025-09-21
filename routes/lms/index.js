@@ -26,32 +26,35 @@ server.get('/api/lms/ping', function(req, res) {
 });
 
 // Secret-based token endpoint (bypasses auth middleware for testing)
-permissions.ignoreRoute(/^\/api\/lms\/service-token\/open(?:\?.*)?$/);
-server.get('/api/lms/service-token/open', function(req, res) {
-  try {
-    var secret = req.query.secret;
-    if (secret !== 'lms-integration-test-2025') {
-      return res.status(401).json({ success: false, message: 'Invalid secret' });
+// Guarded behind ENABLE_LMS_OPEN_TOKEN flag (default: disabled)
+if (process.env.ENABLE_LMS_OPEN_TOKEN === 'true') {
+  permissions.ignoreRoute(/^\/api\/lms\/service-token\/open(?:\?.*)?$/);
+  server.get('/api/lms/service-token/open', function(req, res) {
+    try {
+      var secret = req.query.secret;
+      if (secret !== 'lms-integration-test-2025') {
+        return res.status(401).json({ success: false, message: 'Invalid secret' });
+      }
+
+      // For testing, create a mock user token
+      var mockUserId = 'test-user-' + Date.now();
+      var mockTenantId = 'test-tenant';
+      var issued = _issueToken(mockUserId, mockTenantId, DEFAULT_TTL_MS);
+
+      logger.log('info', 'Generated test token for LMS integration');
+      return res.status(200).json({
+        success: true,
+        token: issued.token,
+        userId: issued.userId,
+        tenantId: issued.tenantId,
+        expiresAt: issued.expiresAt,
+        note: 'This is a test token for LMS integration'
+      });
+    } catch (e) {
+      return _handleError(res, e);
     }
-    
-    // For testing, create a mock user token
-    var mockUserId = 'test-user-' + Date.now();
-    var mockTenantId = 'test-tenant';
-    var issued = _issueToken(mockUserId, mockTenantId, DEFAULT_TTL_MS);
-    
-    logger.log('info', 'Generated test token for LMS integration');
-    return res.status(200).json({ 
-      success: true, 
-      token: issued.token, 
-      userId: issued.userId, 
-      tenantId: issued.tenantId, 
-      expiresAt: issued.expiresAt,
-      note: 'This is a test token for LMS integration'
-    });
-  } catch (e) {
-    return _handleError(res, e);
-  }
-});
+  });
+}
 
 // In-memory service token store (no DB/schema changes)
 // token -> { userId, tenantId, expMs }
@@ -280,6 +283,16 @@ permissions.ignoreRoute(/^\/api\/lms\/service-token(?:\?.*)?$/);
 // POST /api/lms/service-token
 server.post('/api/lms/service-token', function(req, res) {
   try {
+    var origin = req.headers.origin;
+    if (origin) {
+      res.header('Access-Control-Allow-Origin', origin);
+      res.header('Vary', 'Origin');
+      res.header('Access-Control-Allow-Credentials', 'true');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With');
+      res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    }
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+
     // Prefer usermanager (richer object), then fall back to req.user
     var currentUser = null;
     try {
@@ -302,6 +315,17 @@ server.post('/api/lms/service-token', function(req, res) {
 // GET /api/lms/service-token (CSRF-friendly helper)
 server.get('/api/lms/service-token', function(req, res) {
   try {
+    // CORS for browser-based calls from LMS during connect
+    var origin = req.headers.origin;
+    if (origin) {
+      res.header('Access-Control-Allow-Origin', origin);
+      res.header('Vary', 'Origin');
+      res.header('Access-Control-Allow-Credentials', 'true');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With');
+      res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    }
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+
     var currentUser = null;
     try {
       if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
