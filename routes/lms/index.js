@@ -56,7 +56,7 @@ server.get('/api/lms/service-token/open', function(req, res) {
 // In-memory service token store (no DB/schema changes)
 // token -> { userId, tenantId, expMs }
 var _tokens = new Map();
-var DEFAULT_TTL_MS = 15 * 60 * 1000; // 15 minutes
+var DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 function _issueToken(userId, tenantId, ttlMs) {
   var token = crypto.randomBytes(24).toString('hex');
@@ -110,7 +110,12 @@ function _resolveAuth(req, res) {
       logger.log('info', 'LMS auth: expired service token');
       return null;
     }
-    // Lazy purge on use: if close to expiry, keep as-is; caller can request a new token via service-token endpoint
+    // Sliding refresh on use (extend by half of DEFAULT_TTL_MS if below 25%)
+    var remaining = rec.expMs - Date.now();
+    if (remaining < (DEFAULT_TTL_MS * 0.25)) {
+      rec.expMs = Date.now() + DEFAULT_TTL_MS;
+      _tokens.set(hdr, rec);
+    }
     logger.log('info', 'LMS auth: using service token, userId:', rec.userId, 'tenantId:', rec.tenantId);
     return { userId: rec.userId, tenantId: rec.tenantId, user: null };
   } catch (e) {
@@ -131,6 +136,7 @@ permissions.ignoreRoute(/^\/api\/lms\/course\/[^/]+\/metadata(?:\?.*)?$/);
 permissions.ignoreRoute(/^\/api\/lms\/[^/]+\/course\/[^/]+\/metadata(?:\?.*)?$/);
 permissions.ignoreRoute(/^\/api\/lms\/export(?:\?.*)?$/);
 permissions.ignoreRoute(/^\/api\/lms\/export\/download(?:\?.*)?$/);
+permissions.ignoreRoute(/^\/api\/lms\/courses(?:\?.*)?$/);
 // GET /api/lms/whoami (accepts session OR x-adapt-service-token)
 server.get('/api/lms/whoami', function(req, res) {
   try {
@@ -152,6 +158,47 @@ server.get('/api/lms/whoami', function(req, res) {
     return res.status(200).json(payload);
   } catch (e) {
     logger.log('error', 'LMS whoami error:', e);
+    return _handleError(res, e);
+  }
+});
+
+// GET /api/lms/courses?q=&limit=&skip=&sort[title]=1
+server.get('/api/lms/courses', function(req, res) {
+  try {
+    var auth = _resolveAuth(req, res);
+    if (!auth) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    var q = (req.query.q || '').trim();
+    var limit = Math.min(parseInt(req.query.limit || '20', 10) || 20, 50);
+    var skip = Math.max(parseInt(req.query.skip || '0', 10) || 0, 0);
+
+    database.getDatabase(function(dbErr, db) {
+      if (dbErr) return _handleError(res, dbErr);
+
+      var search = {};
+      if (q) {
+        search.title = new RegExp(q, 'i');
+      }
+      // Only courses created by this user within their tenant; can expand later with sharing rules
+      var query = Object.assign({ _tenantId: auth.tenantId, createdBy: auth.userId }, search);
+
+      var options = { jsonOnly: true, fields: '_id title heroImage updatedAt createdAt', skip: skip, limit: limit, sort: { title: 1 } };
+      db.retrieve('course', query, options, function(err, results) {
+        if (err) return _handleError(res, err);
+        var items = (results || []).map(function(c){
+          return {
+            id: c._id,
+            title: c.title,
+            // Build a thumbnail URL if heroImage present; consumers can prefix with Adapt base URL
+            thumbnailUrl: c.heroImage ? ('/api/asset/thumb/' + c.heroImage) : null,
+            updatedAt: c.updatedAt || null,
+            createdAt: c.createdAt || null
+          };
+        });
+        return res.status(200).json({ success: true, items: items, count: items.length, nextCursor: null });
+      });
+    }, auth.tenantId);
+  } catch (e) {
     return _handleError(res, e);
   }
 });
