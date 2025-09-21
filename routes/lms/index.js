@@ -541,8 +541,8 @@ server.post('/api/lms/export', function(req, res) {
           if (!req.session.passport) req.session.passport = {};
           req.session.passport.user = minimalUser;
 
-          // Use publish instead of export to get the built version
-          plugin.publish(courseId, req, res, function (exportErr, result) {
+          // Use publish method to get the built course (not source code)
+          plugin.publish(courseId, Constants.Modes.Publish, req, res, function (exportErr, result) {
             if (exportErr) {
               logger.log('error', 'Unable to publish:', exportErr);
               return res.status(500).json({ success: false, message: exportErr.message || 'Publish failed' });
