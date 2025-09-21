@@ -361,9 +361,16 @@ server.get('/api/lms/service-token', function(req, res) {
     try {
       if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
         currentUser = usermanager.getCurrentUser();
+        logger.log('info', 'getCurrentUser() returned:', currentUser ? 'user found' : 'no user');
       }
-    } catch (e) {}
-    if (!currentUser && req && req.user) currentUser = req.user;
+    } catch (e) {
+      logger.log('error', 'getCurrentUser() error:', e.message);
+    }
+    if (!currentUser && req && req.user) {
+      currentUser = req.user;
+      logger.log('info', 'Using req.user:', currentUser ? 'user found' : 'no user');
+    }
+    logger.log('info', 'Final currentUser:', currentUser ? `user ${currentUser._id}` : 'no user');
     if (!currentUser || !currentUser._id) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
@@ -385,8 +392,10 @@ server.get('/api/lms/service-token/window', function(req, res) {
       '<script>',
       '(async function(){',
       '  try {',
-      '    const r = await fetch("/api/lms/service-token", { credentials: "include" });',
+      '    const r = await fetch(window.location.origin + "/api/lms/service-token", { credentials: "include" });',
+      '    console.log("Token response status:", r.status);',
       '    const j = await r.json();',
+      '    console.log("Token response:", j);',
       '    if (window.opener) {',
       '      window.opener.postMessage({ source: "adapt-lms", type: "service-token", success: !!j.success, token: j.token, userId: j.userId, tenantId: j.tenantId, error: j.error }, ' + JSON.stringify(lmsOrigin) + ');',
       '    }',
