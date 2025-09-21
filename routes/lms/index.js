@@ -385,48 +385,52 @@ server.get('/api/lms/service-token', function(req, res) {
 server.get('/api/lms/service-token/window', function(req, res) {
   try {
     var lmsOrigin = req.query.lmsOrigin || '*';
-    var html = [
+    
+    // Get the token directly on the server side
+    var currentUser = null;
+    try {
+      if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
+        currentUser = usermanager.getCurrentUser();
+      }
+    } catch (e) {}
+    if (!currentUser && req && req.user) currentUser = req.user;
+    
+    if (!currentUser || !currentUser._id) {
+      // User not logged in - show error page
+      var errorHtml = [
+        '<!doctype html>',
+        '<html><head><meta charset="utf-8"><title>Adapt Token</title></head><body>',
+        '<p style="font-family: system-ui, sans-serif;">Please log in to Adapt first, then try again.</p>',
+        '<script>',
+        'if (window.opener) {',
+        '  window.opener.postMessage({ source: "adapt-lms", type: "service-token", success: false, error: "Not logged in" }, "' + lmsOrigin + '");',
+        '}',
+        'setTimeout(function(){ window.close(); }, 2000);',
+        '</script>',
+        '</body></html>'
+      ].join('');
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.status(200).send(errorHtml);
+    }
+    
+    // User is logged in - mint token and send it
+    var issued = _issueToken(currentUser._id, currentUser.tenant && currentUser.tenant._id, DEFAULT_TTL_MS);
+    
+    var successHtml = [
       '<!doctype html>',
       '<html><head><meta charset="utf-8"><title>Adapt Token</title></head><body>',
-      '<p style="font-family: system-ui, sans-serif;">Finalizing connection…</p>',
+      '<p style="font-family: system-ui, sans-serif;">Connection successful!</p>',
       '<script>',
-      '(function(){',
-      '  // Use XMLHttpRequest instead of fetch to better preserve session',
-      '  var xhr = new XMLHttpRequest();',
-      '  xhr.open("GET", "/api/lms/service-token", true);',
-      '  xhr.withCredentials = true;',
-      '  xhr.onreadystatechange = function() {',
-      '    if (xhr.readyState === 4) {',
-      '      try {',
-      '        var j = JSON.parse(xhr.responseText);',
-      '        console.log("Token response status:", xhr.status);',
-      '        console.log("Token response:", j);',
-      '        if (window.opener) {',
-      '          window.opener.postMessage({ source: "adapt-lms", type: "service-token", success: !!j.success, token: j.token, userId: j.userId, tenantId: j.tenantId, error: j.error }, ' + JSON.stringify(lmsOrigin) + ');',
-      '        }',
-      '      } catch (e) {',
-      '        console.log("Parse error:", e);',
-      '        if (window.opener) {',
-      '          window.opener.postMessage({ source: "adapt-lms", type: "service-token", success: false, error: (e && e.message) || String(e) }, ' + JSON.stringify(lmsOrigin) + ');',
-      '        }',
-      '      }',
-      '      setTimeout(function(){ window.close(); }, 150);',
-      '    }',
-      '  };',
-      '  xhr.onerror = function() {',
-      '    console.log("XHR error");',
-      '    if (window.opener) {',
-      '      window.opener.postMessage({ source: "adapt-lms", type: "service-token", success: false, error: "Network error" }, ' + JSON.stringify(lmsOrigin) + ');',
-      '    }',
-      '    setTimeout(function(){ window.close(); }, 150);',
-      '  };',
-      '  xhr.send();',
-      '})();',
+      'if (window.opener) {',
+      '  window.opener.postMessage({ source: "adapt-lms", type: "service-token", success: true, token: "' + issued.token + '", userId: "' + issued.userId + '", tenantId: "' + issued.tenantId + '" }, "' + lmsOrigin + '");',
+      '}',
+      'setTimeout(function(){ window.close(); }, 500);',
       '</script>',
       '</body></html>'
     ].join('');
+    
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    return res.status(200).send(html);
+    return res.status(200).send(successHtml);
   } catch (e) {
     return _handleError(res, e);
   }
