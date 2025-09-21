@@ -347,6 +347,16 @@ server.get('/api/lms/service-token', function(req, res) {
     }
     if (req.method === 'OPTIONS') return res.sendStatus(204);
 
+    // Accept an optional token from LMS to mint a new token for that identity (browser can pass an existing token)
+    var incoming = req.headers['x-adapt-service-token'];
+    if (incoming && typeof incoming === 'string') {
+      var rec = _tokens.get(incoming);
+      if (rec && rec.userId) {
+        var issuedViaToken = _issueToken(rec.userId, rec.tenantId, DEFAULT_TTL_MS);
+        return res.status(200).json({ success: true, token: issuedViaToken.token, userId: issuedViaToken.userId, tenantId: issuedViaToken.tenantId, expiresAt: issuedViaToken.expiresAt });
+      }
+    }
+
     var currentUser = null;
     try {
       if (usermanager.getCurrentUser && typeof usermanager.getCurrentUser === 'function') {
@@ -359,6 +369,39 @@ server.get('/api/lms/service-token', function(req, res) {
     }
     var issued = _issueToken(currentUser._id, currentUser.tenant && currentUser.tenant._id, DEFAULT_TTL_MS);
     return res.status(200).json({ success: true, token: issued.token, userId: issued.userId, tenantId: issued.tenantId, expiresAt: issued.expiresAt });
+  } catch (e) {
+    return _handleError(res, e);
+  }
+});
+
+// GET /api/lms/service-token/window - serves a small HTML that mints a token and posts it to the opener
+server.get('/api/lms/service-token/window', function(req, res) {
+  try {
+    var lmsOrigin = req.query.lmsOrigin || '*';
+    var html = [
+      '<!doctype html>',
+      '<html><head><meta charset="utf-8"><title>Adapt Token</title></head><body>',
+      '<p style="font-family: system-ui, sans-serif;">Finalizing connection…</p>',
+      '<script>',
+      '(async function(){',
+      '  try {',
+      '    const r = await fetch("/api/lms/service-token", { credentials: "include" });',
+      '    const j = await r.json();',
+      '    if (window.opener) {',
+      '      window.opener.postMessage({ source: "adapt-lms", type: "service-token", success: !!j.success, token: j.token, userId: j.userId, tenantId: j.tenantId, error: j.error }, ' + JSON.stringify(lmsOrigin) + ');',
+      '    }',
+      '  } catch (e) {',
+      '    if (window.opener) {',
+      '      window.opener.postMessage({ source: "adapt-lms", type: "service-token", success: false, error: (e && e.message) || String(e) }, ' + JSON.stringify(lmsOrigin) + ');',
+      '    }',
+      '  }',
+      '  setTimeout(function(){ window.close(); }, 150);',
+      '})();',
+      '</script>',
+      '</body></html>'
+    ].join('');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.status(200).send(html);
   } catch (e) {
     return _handleError(res, e);
   }
